@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI 图片生成器 - 流式接口</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+    <div class="container">
+        <!-- 头部 -->
+        <header class="header">
+            <div class="logo">
+                <i class="fas fa-robot"></i>
+                <h1>AI 图片生成器</h1>
+            </div>
+            <div class="status" id="statusIndicator">
+                <span class="status-dot"></span>
+                <span class="status-text">准备就绪</span>
+            </div>
+        </header>
+
+        <!-- 主内容区 -->
+        <main class="main-content">
+            <!-- 左侧控制面板 -->
+            <div class="control-panel">
+                <div class="card">
+                    <h2><i class="fas fa-sliders-h"></i> 生成设置</h2>
+                    
+                    <div class="form-group">
+                        <label for="prompt">
+                            <i class="fas fa-keyboard"></i> 提示词
+                        </label>
+                        <textarea 
+                            id="prompt" 
+                            placeholder="输入描述，例如：a beautiful sunset over mountains, digital art" 
+                            rows="4"
+                        ></textarea>
+                        <div class="char-count">
+                            <span id="charCount">0</span> / 5000
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="modality">
+                            <i class="fas fa-palette"></i> 生成模式
+                        </label>
+                        <select id="modality">
+                            <option value="TEXT_AND_IMAGE">文本 + 图片</option>
+                            <option value="TEXT">仅文本</option>
+                            <option value="IMAGE">仅图片</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="aspectRatio">
+                            <i class="fas fa-crop"></i> 图片比例
+                        </label>
+                        <select id="aspectRatio">
+                            <option value="1:1">1:1 (方形)</option>
+                            <option value="4:3">4:3 (传统)</option>
+                            <option value="16:9">16:9 (宽屏)</option>
+                            <option value="9:16">9:16 (竖屏)</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="imageSize">
+                            <i class="fas fa-expand"></i> 图片尺寸
+                        </label>
+                        <select id="imageSize">
+                            <option value="1k">1K (1024x1024)</option>
+                            <option value="2k">2K (2048x2048)</option>
+                            <option value="4k">4K (4096x4096)</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="temperature">
+                            <i class="fas fa-thermometer-half"></i> 创意度
+                            <span id="tempValue">0.7</span>
+                        </label>
+                        <input type="range" id="temperature" min="0" max="1" step="0.1" value="0.7">
+                        <div class="slider-labels">
+                            <span>保守</span>
+                            <span>平衡</span>
+                            <span>创意</span>
+                        </div>
+                    </div>
+
+                    <div class="button-group">
+                        <button id="generateBtn" class="btn btn-primary">
+                            <i class="fas fa-bolt"></i> 开始生成
+                        </button>
+                        <button id="stopBtn" class="btn btn-danger" disabled>
+                            <i class="fas fa-stop"></i> 停止生成
+                        </button>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <h2><i class="fas fa-history"></i> 历史记录</h2>
+                    <div class="history-list" id="historyList">
+                        <!-- 历史记录会动态添加到这里 -->
+                        <div class="empty-state">
+                            <i class="fas fa-clock"></i>
+                            <p>暂无历史记录</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 右侧结果展示区 -->
+            <div class="result-panel">
+                <div class="card">
+                    <div class="result-header">
+                        <h2><i class="fas fa-image"></i> 生成结果</h2>
+                        <div class="result-controls">
+                            <button id="clearBtn" class="btn btn-secondary">
+                                <i class="fas fa-trash"></i> 清空
+                            </button>
+                            <button id="exportBtn" class="btn btn-success">
+                                <i class="fas fa-download"></i> 导出
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- 进度指示器 -->
+                    <div class="progress-container" id="progressContainer">
+                        <div class="progress-header">
+                            <span>生成进度</span>
+                            <span id="progressText">0%</span>
+                        </div>
+                        <div class="progress-bar">
+                            <div class="progress-fill" id="progressFill"></div>
+                        </div>
+                        <div class="progress-details" id="progressDetails">
+                            等待开始...
+                        </div>
+                    </div>
+
+                    <!-- 流式输出区 -->
+                    <div class="stream-output" id="streamOutput">
+                        <div class="stream-messages" id="streamMessages">
+                            <!-- 流式消息会显示在这里 -->
+                        </div>
+                        
+                        <!-- 文本输出区 -->
+                        <div class="text-output-container">
+                            <div class="text-output-header">
+                                <h3><i class="fas fa-font"></i> 生成的文本</h3>
+                                <button id="copyTextBtn" class="btn btn-small">
+                                    <i class="fas fa-copy"></i> 复制
+                                </button>
+                            </div>
+                            <div class="text-output" id="textOutput">
+                                <!-- 生成的文本会显示在这里 -->
+                            </div>
+                        </div>
+
+                        <!-- 图片输出区 -->
+                        <div class="image-output-container">
+                            <div class="image-output-header">
+                                <h3><i class="fas fa-images"></i> 生成的图片</h3>
+                                <div class="image-stats" id="imageStats">
+                                    0 张图片
+                                </div>
+                            </div>
+                            <div class="image-grid" id="imageGrid">
+                                <!-- 生成的图片会显示在这里 -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 详细面板 -->
+                <div class="card">
+                    <h2><i class="fas fa-info-circle"></i> 详细信息</h2>
+                    <div class="detail-panel" id="detailPanel">
+                        <div class="detail-item">
+                            <span class="detail-label">生成ID:</span>
+                            <span id="detailId" class="detail-value">-</span>
+                        </div>
+                        <div class="detail-item">
+                            <span class="detail-label">开始时间:</span>
+                            <span id="detailStartTime" class="detail-value">-</span>
+                        </div>
+                        <div class="detail-item">
+                            <span class="detail-label">持续时间:</span>
+                            <span id="detailDuration" class="detail-value">-</span>
+                        </div>
+                        <div class="detail-item">
+                            <span class="detail-label">缓存键:</span>
+                            <span id="detailCacheKeys" class="detail-value">-</span>
+                        </div>
+                        <div class="detail-item">
+                            <span class="detail-label">状态:</span>
+                            <span id="detailStatus" class="detail-value">就绪</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <!-- 底部状态栏 -->
+        <footer class="footer">
+            <div class="system-info">
+                <span><i class="fas fa-server"></i> AI Image Generator v1.0</span>
+                <span><i class="fas fa-plug"></i> 流式接口已连接</span>
+                <span><i class="fas fa-database"></i> 缓存: <span id="cacheStatus">正常</span></span>
+            </div>
+            <div class="connection-status">
+                <span id="connectionStatus">已连接到服务器</span>
+            </div>
+        </footer>
+    </div>
+
+    <!-- 模态框 -->
+    <div class="modal" id="imageModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>图片预览</h3>
+                <button class="modal-close" id="modalClose">&times;</button>
+            </div>
+            <div class="modal-body">
+                <img id="modalImage" src="" alt="预览图片">
+                <div class="modal-info" id="modalInfo"></div>
+            </div>
+            <div class="modal-footer">
+                <button id="downloadBtn" class="btn btn-primary">
+                    <i class="fas fa-download"></i> 下载图片
+                </button>
+                <button id="shareBtn" class="btn btn-secondary">
+                    <i class="fas fa-share"></i> 分享
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 提示框 -->
+    <div class="toast-container" id="toastContainer"></div>
+
+    <script src="app.js"></script>
+</body>
+</html>

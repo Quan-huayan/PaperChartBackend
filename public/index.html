@@ -1,0 +1,753 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PDF 提取服务</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            overflow: hidden;
+        }
+
+        header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 40px;
+            text-align: center;
+        }
+
+        header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+        }
+
+        header p {
+            font-size: 1.1rem;
+            opacity: 0.9;
+        }
+
+        .main-content {
+            display: flex;
+            min-height: 600px;
+        }
+
+        .sidebar {
+            width: 300px;
+            background: #f8f9fa;
+            padding: 30px;
+            border-right: 1px solid #e9ecef;
+        }
+
+        .content {
+            flex: 1;
+            padding: 40px;
+        }
+
+        .upload-area {
+            border: 3px dashed #667eea;
+            border-radius: 15px;
+            padding: 40px;
+            text-align: center;
+            margin-bottom: 30px;
+            background: #f8f9ff;
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+
+        .upload-area:hover {
+            background: #eef1ff;
+            transform: translateY(-2px);
+        }
+
+        .upload-area.dragover {
+            background: #e0e7ff;
+            border-color: #764ba2;
+        }
+
+        .upload-icon {
+            font-size: 48px;
+            color: #667eea;
+            margin-bottom: 20px;
+        }
+
+        .file-input {
+            display: none;
+        }
+
+        .btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 12px 30px;
+            border-radius: 25px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
+        }
+
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .btn-ghost {
+            background: transparent;
+            border: 2px solid #667eea;
+            color: #667eea;
+        }
+
+        .btn-ghost:hover {
+            background: #667eea;
+            color: white;
+        }
+
+        .options {
+            margin: 30px 0;
+        }
+
+        .option-group {
+            margin-bottom: 20px;
+        }
+
+        .option-group h3 {
+            color: #495057;
+            margin-bottom: 10px;
+            font-size: 18px;
+        }
+
+        .checkbox {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin: 10px 0;
+        }
+
+        .checkbox input {
+            width: 18px;
+            height: 18px;
+        }
+
+        .status {
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            display: none;
+        }
+
+        .status.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+            display: block;
+        }
+
+        .status.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+            display: block;
+        }
+
+        .status.info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+            display: block;
+        }
+
+        .progress {
+            width: 100%;
+            height: 10px;
+            background: #e9ecef;
+            border-radius: 5px;
+            overflow: hidden;
+            margin: 20px 0;
+            display: none;
+        }
+
+        .progress-bar {
+            height: 100%;
+            background: linear-gradient(90deg, #667eea, #764ba2);
+            width: 0%;
+            transition: width 0.3s ease;
+        }
+
+        .result-section {
+            margin-top: 40px;
+            display: none;
+        }
+
+        .result-section.show {
+            display: block;
+        }
+
+        .tabs {
+            display: flex;
+            border-bottom: 2px solid #e9ecef;
+            margin-bottom: 20px;
+        }
+
+        .tab {
+            padding: 10px 20px;
+            cursor: pointer;
+            font-weight: 600;
+            color: #6c757d;
+            transition: all 0.3s ease;
+        }
+
+        .tab.active {
+            color: #667eea;
+            border-bottom: 3px solid #667eea;
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        .text-content {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 10px;
+            max-height: 400px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+        }
+
+        .image-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
+        }
+
+        .image-item {
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+            transition: transform 0.3s ease;
+        }
+
+        .image-item:hover {
+            transform: translateY(-5px);
+        }
+
+        .image-item img {
+            width: 100%;
+            height: 150px;
+            object-fit: cover;
+        }
+
+        .table-list {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .table-item {
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 10px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin: 30px 0;
+        }
+
+        .stat-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 15px;
+            text-align: center;
+        }
+
+        .stat-number {
+            font-size: 2.5rem;
+            font-weight: bold;
+            margin: 10px 0;
+        }
+
+        .stat-label {
+            font-size: 0.9rem;
+            opacity: 0.9;
+        }
+
+        @media (max-width: 768px) {
+            .main-content {
+                flex-direction: column;
+            }
+            
+            .sidebar {
+                width: 100%;
+                border-right: none;
+                border-bottom: 1px solid #e9ecef;
+            }
+            
+            header {
+                padding: 30px 20px;
+            }
+            
+            header h1 {
+                font-size: 2rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>📄 PDF 智能提取服务</h1>
+            <p>使用 Adobe PDF Extract API 提取文本、表格和图片</p>
+        </header>
+        
+        <div class="main-content">
+            <div class="sidebar">
+                <div class="upload-area" id="uploadArea">
+                    <div class="upload-icon">📁</div>
+                    <h3>上传 PDF 文件</h3>
+                    <p>点击或拖拽文件到此区域</p>
+                    <p class="file-types">支持 .pdf 格式，最大 50MB</p>
+                    <input type="file" id="fileInput" class="file-input" accept=".pdf">
+                    <button class="btn" onclick="document.getElementById('fileInput').click()">
+                        📤 选择文件
+                    </button>
+                </div>
+                
+                <div class="options">
+                    <div class="option-group">
+                        <h3>提取选项</h3>
+                        <label class="checkbox">
+                            <input type="checkbox" id="extractText" checked>
+                            <span>提取文本</span>
+                        </label>
+                        <label class="checkbox">
+                            <input type="checkbox" id="extractTables" checked>
+                            <span>提取表格</span>
+                        </label>
+                        <label class="checkbox">
+                            <input type="checkbox" id="extractImages" checked>
+                            <span>提取图片</span>
+                        </label>
+                        <label class="checkbox">
+                            <input type="checkbox" id="includeStyling" checked>
+                            <span>包含样式信息</span>
+                        </label>
+                        <label class="checkbox">
+                            <input type="checkbox" id="includeCharBounds">
+                            <span>包含字符边界</span>
+                        </label>
+                    </div>
+                    
+                    <div class="option-group">
+                        <h3>处理类型</h3>
+                        <button class="btn" onclick="handleExtract()" id="extractBtn">
+                            🚀 提取内容
+                        </button>
+                        <button class="btn btn-ghost" onclick="handleOCR()" id="ocrBtn">
+                            🔍 OCR 识别
+                        </button>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="content">
+                <div class="status" id="status"></div>
+                
+                <div class="progress" id="progress">
+                    <div class="progress-bar" id="progressBar"></div>
+                </div>
+                
+                <div class="result-section" id="resultSection">
+                    <div class="stats" id="stats"></div>
+                    
+                    <div class="tabs">
+                        <div class="tab active" onclick="switchTab('text')">文本</div>
+                        <div class="tab" onclick="switchTab('tables')">表格</div>
+                        <div class="tab" onclick="switchTab('images')">图片</div>
+                        <div class="tab" onclick="switchTab('metadata')">元数据</div>
+                    </div>
+                    
+                    <div class="tab-content active" id="textTab">
+                        <div class="text-content" id="textContent"></div>
+                    </div>
+                    
+                    <div class="tab-content" id="tablesTab">
+                        <div class="table-list" id="tableList"></div>
+                    </div>
+                    
+                    <div class="tab-content" id="imagesTab">
+                        <div class="image-grid" id="imageGrid"></div>
+                    </div>
+                    
+                    <div class="tab-content" id="metadataTab">
+                        <div class="text-content" id="metadataContent"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentFile = null;
+        let extractResult = null;
+
+        // 初始化事件监听
+        document.getElementById('fileInput').addEventListener('change', handleFileSelect);
+        const uploadArea = document.getElementById('uploadArea');
+        
+        // 拖拽上传
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            uploadArea.addEventListener(eventName, preventDefaults, false);
+        });
+        
+        function preventDefaults(e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+        
+        ['dragenter', 'dragover'].forEach(eventName => {
+            uploadArea.addEventListener(eventName, highlight, false);
+        });
+        
+        ['dragleave', 'drop'].forEach(eventName => {
+            uploadArea.addEventListener(eventName, unhighlight, false);
+        });
+        
+        function highlight() {
+            uploadArea.classList.add('dragover');
+        }
+        
+        function unhighlight() {
+            uploadArea.classList.remove('dragover');
+        }
+        
+        uploadArea.addEventListener('drop', handleDrop, false);
+        
+        function handleDrop(e) {
+            const dt = e.dataTransfer;
+            const files = dt.files;
+            
+            if (files.length > 0) {
+                handleFile(files[0]);
+            }
+        }
+        
+        function handleFileSelect(e) {
+            const file = e.target.files[0];
+            handleFile(file);
+        }
+        
+        function handleFile(file) {
+            if (!file || file.type !== 'application/pdf') {
+                showStatus('请选择 PDF 文件', 'error');
+                return;
+            }
+            
+            if (file.size > 50 * 1024 * 1024) {
+                showStatus('文件大小不能超过 50MB', 'error');
+                return;
+            }
+            
+            currentFile = file;
+            showStatus(`已选择文件: ${file.name} (${formatFileSize(file.size)})`, 'success');
+            document.getElementById('resultSection').classList.remove('show');
+        }
+        
+        function handleExtract() {
+            if (!currentFile) {
+                showStatus('请先选择 PDF 文件', 'error');
+                return;
+            }
+            
+            const formData = new FormData();
+            formData.append('pdf', currentFile);
+            
+            showProgress(true);
+            showStatus('正在提取 PDF 内容...', 'info');
+            
+            fetch('/api/extract', {
+                method: 'POST',
+                body: formData
+            })
+            .then(handleResponse)
+            .then(data => {
+                extractResult = data;
+                displayResults(data);
+                showStatus('提取完成！', 'success');
+            })
+            .catch(handleError)
+            .finally(() => showProgress(false));
+        }
+        
+        function handleOCR() {
+            if (!currentFile) {
+                showStatus('请先选择 PDF 文件', 'error');
+                return;
+            }
+            
+            const formData = new FormData();
+            formData.append('pdf', currentFile);
+            
+            showProgress(true);
+            showStatus('正在执行 OCR 识别...', 'info');
+            
+            fetch('/api/ocr', {
+                method: 'POST',
+                body: formData
+            })
+            .then(handleResponse)
+            .then(data => {
+                extractResult = data;
+                displayResults(data);
+                showStatus('OCR 完成！', 'success');
+            })
+            .catch(handleError)
+            .finally(() => showProgress(false));
+        }
+        
+        function handleResponse(response) {
+            if (!response.ok) {
+                return response.json().then(err => {
+                    throw new Error(err.message || '请求失败');
+                });
+            }
+            return response.json();
+        }
+        
+        function handleError(error) {
+            console.error('Error:', error);
+            showStatus(`处理失败: ${error.message}`, 'error');
+        }
+        
+        function displayResults(data) {
+            document.getElementById('resultSection').classList.add('show');
+            
+            // 显示统计信息
+            displayStats(data);
+            
+            // 显示文本
+            displayText(data);
+            
+            // 显示表格
+            displayTables(data);
+            
+            // 显示图片
+            displayImages(data);
+            
+            // 显示元数据
+            displayMetadata(data);
+        }
+        
+        function displayStats(data) {
+            const statsDiv = document.getElementById('stats');
+            const metadata = data.metadata || data.extractedText?.metadata;
+            
+            if (metadata) {
+                statsDiv.innerHTML = `
+                    <div class="stat-card">
+                        <div class="stat-number">${metadata.totalElements || 0}</div>
+                        <div class="stat-label">总元素</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-number">${metadata.textElements || 0}</div>
+                        <div class="stat-label">文本元素</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-number">${metadata.tableElements || 0}</div>
+                        <div class="stat-label">表格元素</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-number">${metadata.imageElements || 0}</div>
+                        <div class="stat-label">图片元素</div>
+                    </div>
+                `;
+            }
+        }
+        
+        function displayText(data) {
+            const textDiv = document.getElementById('textContent');
+            const elements = data.elements || data.extractedText?.elements || [];
+            const textElements = elements.filter(e => e.type === 'text');
+            
+            if (textElements.length === 0) {
+                textDiv.textContent = '未提取到文本内容';
+                return;
+            }
+            
+            let text = '';
+            textElements.forEach((element, index) => {
+                text += `[第${element.page}页] ${element.text}\n`;
+            });
+            
+            textDiv.textContent = text;
+        }
+        
+        function displayTables(data) {
+            const tableList = document.getElementById('tableList');
+            const elements = data.elements || data.extractedText?.elements || [];
+            const tableElements = elements.filter(e => e.type === 'table');
+            
+            if (tableElements.length === 0) {
+                tableList.innerHTML = '<p>未提取到表格</p>';
+                return;
+            }
+            
+            let html = '';
+            tableElements.forEach((table, index) => {
+                html += `
+                    <div class="table-item">
+                        <div>
+                            <strong>表格 ${index + 1}</strong>
+                            <p>第 ${table.page} 页 | ${table.rowCount || '?'} 行 × ${table.columnCount || '?'} 列</p>
+                        </div>
+                        <div>
+                            <a href="/api/cache/table/${table.key}" class="btn" download>
+                                ⬇️ 下载 ${table.format || 'CSV'}
+                            </a>
+                        </div>
+                    </div>
+                `;
+            });
+            
+            tableList.innerHTML = html;
+        }
+        
+        function displayImages(data) {
+            const imageGrid = document.getElementById('imageGrid');
+            const elements = data.elements || data.extractedText?.elements || [];
+            const imageElements = elements.filter(e => e.type === 'image');
+            
+            if (imageElements.length === 0) {
+                imageGrid.innerHTML = '<p>未提取到图片</p>';
+                return;
+            }
+            
+            let html = '';
+            imageElements.forEach((image, index) => {
+                html += `
+                    <div class="image-item">
+                        <img src="/api/cache/image/${image.key}" alt="${image.alt || '提取的图片'}">
+                        <div style="padding: 10px;">
+                            <p><strong>图片 ${index + 1}</strong></p>
+                            <p>第 ${image.page} 页</p>
+                        </div>
+                    </div>
+                `;
+            });
+            
+            imageGrid.innerHTML = html;
+        }
+        
+        function displayMetadata(data) {
+            const metadataDiv = document.getElementById('metadataContent');
+            const docInfo = data.document || data.extractedText?.document || {};
+            
+            let metadata = {
+                文档标题: docInfo.title || '未指定',
+                作者: docInfo.author || '未指定',
+                页数: docInfo.pageCount || '未知',
+                处理时间: new Date().toLocaleString(),
+                文件大小: currentFile ? formatFileSize(currentFile.size) : '未知'
+            };
+            
+            let html = '';
+            for (const [key, value] of Object.entries(metadata)) {
+                html += `<p><strong>${key}:</strong> ${value}</p>`;
+            }
+            
+            metadataDiv.innerHTML = html;
+        }
+        
+        function switchTab(tabName) {
+            // 更新标签状态
+            document.querySelectorAll('.tab').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            document.querySelectorAll('.tab-content').forEach(content => {
+                content.classList.remove('active');
+            });
+            
+            event.target.classList.add('active');
+            document.getElementById(`${tabName}Tab`).classList.add('active');
+        }
+        
+        function showStatus(message, type = 'info') {
+            const statusDiv = document.getElementById('status');
+            statusDiv.textContent = message;
+            statusDiv.className = `status ${type}`;
+        }
+        
+        function showProgress(show) {
+            const progress = document.getElementById('progress');
+            const extractBtn = document.getElementById('extractBtn');
+            const ocrBtn = document.getElementById('ocrBtn');
+            
+            if (show) {
+                progress.style.display = 'block';
+                extractBtn.disabled = true;
+                ocrBtn.disabled = true;
+                // 模拟进度
+                let width = 0;
+                const interval = setInterval(() => {
+                    width += 5;
+                    document.getElementById('progressBar').style.width = width + '%';
+                    if (width >= 95) clearInterval(interval);
+                }, 100);
+            } else {
+                progress.style.display = 'none';
+                extractBtn.disabled = false;
+                ocrBtn.disabled = false;
+                document.getElementById('progressBar').style.width = '0%';
+            }
+        }
+        
+        function formatFileSize(bytes) {
+            if (bytes === 0) return '0 Bytes';
+            const k = 1024;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        }
+    </script>
+</body>
+</html>
