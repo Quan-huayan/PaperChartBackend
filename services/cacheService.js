@@ -1,263 +1,332 @@
 const fs = require('fs-extra');
 const path = require('path');
-const sharp = require('sharp');
-
+const { v4: uuidv4 } = require('uuid');
 
 class CacheService {
   constructor() {
-    this.cacheDir = process.env.CACHE_DIR || './cache';
-    this.imageDir = path.join(this.cacheDir, 'images');
-    this.tableDir = path.join(this.cacheDir, 'tables');
+    this.baseDir = process.env.CACHE_DIR || './cache';
+    this.imagesDir = path.join(this.baseDir, 'images');
+    this.tablesDir = path.join(this.baseDir, 'tables');
     
-    // 确保缓存目录存在
-    fs.ensureDirSync(this.imageDir);
-    fs.ensureDirSync(this.tableDir);
-
-    this.stats = {
-      totalImages: 0,
-      totalSize: 0,
-      lastCleanup: null
-    };
+    // 确保目录存在
+    fs.ensureDirSync(this.imagesDir);
+    fs.ensureDirSync(this.tablesDir);
     
-    this.updateStats();
+    console.log(`[CacheService] 图片缓存目录: ${this.imagesDir}`);
+    console.log(`[CacheService] 表格缓存目录: ${this.tablesDir}`);
   }
 
-/**
+  /**
    * 保存图片到缓存
+   * @param {string} key 图片唯一标识
+   * @param {Buffer} buffer 图片数据
+   * @param {string} mimeType 图片MIME类型
+   * @returns {Promise<string>} 保存的文件路径
    */
   async saveImage(key, buffer, mimeType = 'image/png') {
-    const extension = this.getExtensionFromMimeType(mimeType);
-    const originalPath = path.join(this.imageDir, `${key}${extension}`);
-    
-    // 保存原始图片
-    await fs.writeFile(originalPath, buffer);
-    
-    // 生成缩略图
-    await this.generateThumbnail(key, buffer, extension);
-    
-    // 更新统计信息
-    await this.updateStats();
-    
-    return {
-      key,
-      originalPath,
-      thumbnailPath: path.join(this.imageDir, `${key}_thumb${extension}`),
-      size: buffer.length,
-      mimeType,
-      createdAt: new Date().toISOString()
-    };
+    try {
+      // 根据MIME类型确定文件扩展名
+      const extMap = {
+        'image/png': '.png',
+        'image/jpeg': '.jpg',
+        'image/jpg': '.jpg',
+        'image/gif': '.gif',
+        'image/webp': '.webp'
+      };
+      
+      const extension = extMap[mimeType] || '.png';
+      const filename = `${key}${extension}`;
+      const filePath = path.join(this.imagesDir, filename);
+      
+      // 保存文件
+      await fs.writeFile(filePath, buffer);
+      
+      console.log(`[CacheService] 图片已保存: ${filePath} (${buffer.length} 字节)`);
+      return filePath;
+    } catch (error) {
+      console.error('[CacheService] 保存图片失败:', error);
+      throw new Error(`Failed to save image: ${error.message}`);
+    }
   }
 
   /**
-   * 从base64字符串保存图片
-   */
-  async saveImageFromBase64(key, base64Data, mimeType = 'image/png') {
-    const buffer = Buffer.from(base64Data, 'base64');
-    return this.saveImage(key, buffer, mimeType);
-  }
-
-  /**
-   * 从buffer保存图片
+   * 保存图片从Buffer（兼容aiService.js中的调用）
+   * @param {Buffer} buffer 图片数据
+   * @param {string} mimeType 图片MIME类型
+   * @returns {Promise<string>} 生成的图片key
    */
   async saveImageFromBuffer(buffer, mimeType = 'image/png') {
-    const key = require('uuid').v4();
-    return this.saveImage(key, buffer, mimeType);
-  }
-
-  /**
-   * 生成缩略图
-   */
-  async generateThumbnail(key, buffer, extension) {
     try {
-      const thumbnailPath = path.join(this.imageDir, `${key}_thumb${extension}`);
-      
-      await sharp(buffer)
-        .resize(200, 200, { fit: 'inside' })
-        .toFile(thumbnailPath);
-      
-      return thumbnailPath;
+      const imageKey = uuidv4();
+      await this.saveImage(imageKey, buffer, mimeType);
+      return imageKey;
     } catch (error) {
-      console.warn('Failed to generate thumbnail:', error);
-      return null;
+      console.error('[CacheService] 从Buffer保存图片失败:', error);
+      throw error;
     }
   }
 
   /**
-   * 获取图片路径
+   * 根据key获取图片文件路径
+   * @param {string} key 图片key
+   * @param {string} size 图片尺寸
+   * @returns {string|null} 文件路径或null
    */
   getImagePath(key, size = 'original') {
-    const files = fs.readdirSync(this.imageDir);
-    const pattern = size === 'thumb' ? `${key}_thumb.` : `${key}.`;
-    
-    for (const file of files) {
-      if (file.includes(pattern)) {
-        return path.join(this.imageDir, file);
+    try {
+      // 尝试不同的文件扩展名
+      const extensions = ['.png', '.jpg', '.jpeg', '.gif', '.webp'];
+      
+      for (const ext of extensions) {
+        const filename = `${key}${ext}`;
+        const filePath = path.join(this.imagesDir, filename);
+        
+        if (fs.existsSync(filePath)) {
+          console.log(`[CacheService] 找到图片: ${filePath}`);
+          return filePath;
+        }
       }
+      
+      console.warn(`[CacheService] 图片不存在: ${key}`);
+      return null;
+    } catch (error) {
+      console.error('[CacheService] 获取图片路径失败:', error);
+      return null;
     }
-    
-    return null;
   }
 
   /**
    * 获取图片信息
+   * @param {string} key 图片key
+   * @returns {Object|null} 图片信息或null
    */
   getImageInfo(key) {
-    const originalPath = this.getImagePath(key, 'original');
-    const thumbPath = this.getImagePath(key, 'thumb');
-    
-    if (!originalPath || !fs.existsSync(originalPath)) {
+    try {
+      const filePath = this.getImagePath(key);
+      if (!filePath) return null;
+      
+      const stats = fs.statSync(filePath);
+      return {
+        key,
+        path: filePath,
+        size: stats.size,
+        modified: stats.mtime,
+        exists: true
+      };
+    } catch (error) {
+      console.error('[CacheService] 获取图片信息失败:', error);
       return null;
     }
-    
-    const stats = fs.statSync(originalPath);
-    
-    return {
-      key,
-      originalUrl: `/api/cache/image/${key}`,
-      thumbnailUrl: thumbPath ? `/api/cache/image/${key}?size=thumb` : null,
-      size: stats.size,
-      createdAt: stats.birthtime,
-      modifiedAt: stats.mtime,
-      path: originalPath
-    };
-  }
-
-  async saveTable(key, buffer, isCSV = true) {
-    const extension = isCSV ? '.csv' : '.xlsx';
-    const tablePath = path.join(this.tableDir, `${key}${extension}`);
-    await fs.writeFile(tablePath, buffer);
-    return tablePath;
-  }
-
-  getTablePath(key) {
-    const csvPath = path.join(this.tableDir, `${key}.csv`);
-    const xlsxPath = path.join(this.tableDir, `${key}.xlsx`);
-    
-    if (fs.existsSync(csvPath)) return csvPath;
-    if (fs.existsSync(xlsxPath)) return xlsxPath;
-    
-    return null;
   }
 
   /**
-   * 根据MIME类型获取文件扩展名
+   * 清理过期文件
+   * @param {number} maxAgeHours 最大保存时间（小时）
+   * @returns {Promise<Object>} 清理结果
    */
-  getExtensionFromMimeType(mimeType) {
-    const map = {
-      'image/png': '.png',
-      'image/jpeg': '.jpg',
-      'image/jpg': '.jpg',
-      'image/gif': '.gif',
-      'image/webp': '.webp'
-    };
-    
-    return map[mimeType] || '.png';
-  }
-
-  /**
-   * 更新缓存统计信息
-   */
-  async updateStats() {
+  async cleanupOldFiles(maxAgeHours = 24) {
     try {
-      const files = await fs.readdir(this.imageDir);
-      let totalSize = 0;
+      const cutoffTime = Date.now() - (maxAgeHours * 60 * 60 * 1000);
+      let deletedCount = 0;
+      let freedSpace = 0;
       
+      // 清理图片文件
+      const files = await fs.readdir(this.imagesDir);
       for (const file of files) {
-        if (!file.includes('_thumb')) { // 不统计缩略图
-          const filePath = path.join(this.imageDir, file);
-          const stats = await fs.stat(filePath);
+        const filePath = path.join(this.imagesDir, file);
+        const stats = fs.statSync(filePath);
+        
+        if (stats.mtime.getTime() < cutoffTime) {
+          await fs.remove(filePath);
+          deletedCount++;
+          freedSpace += stats.size;
+        }
+      }
+      
+      console.log(`[CacheService] 清理完成: 删除 ${deletedCount} 个文件, 释放 ${freedSpace} 字节`);
+      
+      return {
+        deletedCount,
+        freedSpace,
+        cutoffTime: new Date(cutoffTime).toISOString()
+      };
+    } catch (error) {
+      console.error('[CacheService] 清理文件失败:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * 获取缓存统计信息
+   * @returns {Object} 统计信息
+   */
+  getStats() {
+    try {
+      const imageFiles = fs.readdirSync(this.imagesDir);
+      const tableFiles = fs.readdirSync(this.tablesDir);
+      
+      let totalSize = 0;
+      for (const file of imageFiles) {
+        const filePath = path.join(this.imagesDir, file);
+        if (fs.existsSync(filePath)) {
+          const stats = fs.statSync(filePath);
           totalSize += stats.size;
         }
       }
       
-      this.stats = {
-        totalImages: files.filter(f => !f.includes('_thumb')).length,
+      return {
+        imageCount: imageFiles.length,
+        tableCount: tableFiles.length,
         totalSize,
-        lastUpdated: new Date().toISOString()
+        totalSizeMB: Math.round(totalSize / (1024 * 1024) * 100) / 100,
+        baseDir: this.baseDir,
+        imagesDir: this.imagesDir,
+        tablesDir: this.tablesDir
       };
     } catch (error) {
-      console.error('Error updating cache stats:', error);
+      console.error('[CacheService] 获取统计信息失败:', error);
+      return {
+        error: error.message
+      };
     }
   }
 
   /**
-   * 获取缓存统计
+   * 保存表格到缓存
+   * @param {string} key 表格key
+   * @param {string} content 表格内容
+   * @param {string} format 表格格式
+   * @returns {Promise<string>} 保存的文件路径
    */
-  getStats() {
-    return {
-      ...this.stats,
-      cacheDir: this.cacheDir,
-      imageDir: this.imageDir,
-      enabled: process.env.ENABLE_CACHE === 'true'
-    };
-  }
-
-    /**
-   * 删除特定key的图片
-   */
-  async deleteImage(key) {
-    const originalPath = this.getImagePath(key, 'original');
-    const thumbPath = this.getImagePath(key, 'thumb');
-    
-    const deleted = [];
-    
-    if (originalPath && fs.existsSync(originalPath)) {
-      await fs.unlink(originalPath);
-      deleted.push('original');
-    }
-    
-    if (thumbPath && fs.existsSync(thumbPath)) {
-      await fs.unlink(thumbPath);
-      deleted.push('thumbnail');
-    }
-    
-    await this.updateStats();
-    
-    return {
-      success: deleted.length > 0,
-      deleted,
-      key,
-      timestamp: new Date().toISOString()
-    };
-  }
-
-  /**
-   * 清理旧文件
-   */
-  async cleanupOldFiles(maxAgeHours = 24) {
-    const now = Date.now();
-    const maxAge = maxAgeHours * 60 * 60 * 1000;
-    const deletedFiles = [];
-    let freedSpace = 0;
-    
+  async saveTable(key, content, format = 'csv') {
     try {
-      const files = await fs.readdir(this.imageDir);
+      const filename = `${key}.${format}`;
+      const filePath = path.join(this.tablesDir, filename);
       
-      for (const file of files) {
-        const filePath = path.join(this.imageDir, file);
-        const stats = await fs.stat(filePath);
+      await fs.writeFile(filePath, content);
+      
+      console.log(`[CacheService] 表格已保存: ${filePath}`);
+      return filePath;
+    } catch (error) {
+      console.error('[CacheService] 保存表格失败:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * 获取表格文件路径
+   * @param {string} key 表格key
+   * @returns {string|null} 文件路径或null
+   */
+  getTablePath(key) {
+    try {
+      const extensions = ['.csv', '.xlsx', '.xls'];
+      
+      for (const ext of extensions) {
+        const filename = `${key}${ext}`;
+        const filePath = path.join(this.tablesDir, filename);
         
-        if (now - stats.mtimeMs > maxAge) {
-          const fileSize = stats.size;
-          await fs.unlink(filePath);
-          
-          deletedFiles.push(file);
-          freedSpace += fileSize;
+        if (fs.existsSync(filePath)) {
+          return filePath;
         }
       }
       
-      await this.updateStats();
-      
-      return {
-        deletedCount: deletedFiles.length,
-        freedSpace,
-        deletedFiles,
-        timestamp: new Date().toISOString()
-      };
-      
+      return null;
     } catch (error) {
-      console.error('Error during cache cleanup:', error);
-      throw error;
+      console.error('[CacheService] 获取表格路径失败:', error);
+      return null;
+    }
+  }
+
+  /**
+   * 调试方法：列出所有缓存文件
+   * @returns {Array} 文件列表
+   */
+  listAllFiles() {
+    try {
+      const files = [];
+      
+      // 列出图片文件
+      const imageFiles = fs.readdirSync(this.imagesDir);
+      for (const file of imageFiles) {
+        const filePath = path.join(this.imagesDir, file);
+        const stats = fs.statSync(filePath);
+        files.push({
+          type: 'image',
+          filename: file,
+          path: filePath,
+          size: stats.size,
+          modified: stats.mtime
+        });
+      }
+      
+      // 列出表格文件
+      const tableFiles = fs.readdirSync(this.tablesDir);
+      for (const file of tableFiles) {
+        const filePath = path.join(this.tablesDir, file);
+        const stats = fs.statSync(filePath);
+        files.push({
+          type: 'table',
+          filename: file,
+          path: filePath,
+          size: stats.size,
+          modified: stats.mtime
+        });
+      }
+      
+      return files.sort((a, b) => b.modified - a.modified);
+    } catch (error) {
+      console.error('[CacheService] 列出文件失败:', error);
+      return [];
+    }
+  }
+
+  /**
+   * 调试方法：检查特定key的图片是否存在
+   * @param {string} key 图片key
+   * @returns {Object} 检查结果
+   */
+  checkImageExists(key) {
+    try {
+      const extensions = ['.png', '.jpg', '.jpeg', '.gif', '.webp'];
+      const results = [];
+      
+      for (const ext of extensions) {
+        const filename = `${key}${ext}`;
+        const filePath = path.join(this.imagesDir, filename);
+        
+        if (fs.existsSync(filePath)) {
+          const stats = fs.statSync(filePath);
+          results.push({
+            filename,
+            path: filePath,
+            exists: true,
+            size: stats.size,
+            modified: stats.mtime
+          });
+        } else {
+          results.push({
+            filename,
+            path: filePath,
+            exists: false
+          });
+        }
+      }
+      
+      const existingFiles = results.filter(r => r.exists);
+      return {
+        key,
+        results,
+        exists: existingFiles.length > 0,
+        foundFiles: existingFiles
+      };
+    } catch (error) {
+      console.error('[CacheService] 检查图片失败:', error);
+      return {
+        key,
+        error: error.message,
+        exists: false
+      };
     }
   }
 }
