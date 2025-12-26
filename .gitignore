@@ -2,6 +2,7 @@ cache/
 node_modules/
 temp/
 uploads/
+outputs/
 .env
 npm-debug.log*
 yarn-debug.log*

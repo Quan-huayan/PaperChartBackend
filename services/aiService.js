@@ -1,6 +1,8 @@
 const axios = require('axios');
 const { v4: uuidv4 } = require('uuid');
 const cacheService = require('./cacheService');
+const pdfService = require('./pdfService');
+const path = require("path");
 
 class AIService {
   constructor() {
@@ -44,7 +46,7 @@ Keywords: 5个核心关键词，仅逗号分隔。`
     }
   }
 
-  // Phase 2: 核心工作流
+// Phase 2: 核心工作流
 async generateFromPaper(paperText, onChunk) {
     // 拦截器：只允许图片和错误流出，绝对屏蔽文本
     const wrappedOnChunk = (chunk) => {
@@ -60,15 +62,99 @@ async generateFromPaper(paperText, onChunk) {
             modality: 'TEXT_AND_IMAGE',
             aspectRatio: '1:1',
             imageSize: '1k'
-        }, wrappedOnChunk).catch(err => {
+        }, wrappedOnChunk).then(async (result) => {
+            if (result.success && result.cacheKeys && result.cacheKeys.length > 0) {
+                console.log(`📄 任务 ${i} 生成完成，开始 OCR 处理 ${result.cacheKeys.length} 张图片...`);
+                
+                // 对每张生成的图片进行 OCR 处理
+                const ocrTasks = result.cacheKeys.map(async (cacheKey) => {
+                    try {
+                        console.log(`🔄 处理图片 ${cacheKey} 的 OCR...`);
+
+                        // 从缓存获取图片数据
+                        const imageData = await cacheService.getImageBuffer(cacheKey);
+                        
+                        if (!imageData) {
+                            console.error(`❌ 无法获取图片 ${cacheKey} 的数据`);
+                            return cacheKey; // 返回原键
+                        }
+                        
+                        // 根据图片格式嵌入图片
+                        const ext = path.extname(cacheService.getImagePath(cacheKey)).toLowerCase();
+                        
+                        // 调用 OCR 处理
+                        const ocrResult = await pdfService.image_ocr_image(ext, imageData);
+                        
+                        if (ocrResult && ocrResult.path) {
+                            console.log(`✅ 图片 ${cacheKey} OCR 处理完成`);
+                            
+                            // 生成新的缓存键
+                            const newKey = uuidv4();
+                            
+                            // 保存OCR处理后的图片到缓存
+                            // 这里需要从文件系统读取OCR处理后的图片
+                            const fs = require('fs');
+                            const ocrImageBuffer = fs.readFileSync(ocrResult.fullPath);
+                            await cacheService.saveImage(newKey, ocrImageBuffer, 'image/png');
+                            
+                            // 发送OCR处理后的图片事件
+                            onChunk({ 
+                                type: 'image', 
+                                key: newKey, 
+                                timestamp: new Date().toISOString(),
+                                originalKey: cacheKey,
+                                processed: true 
+                            });
+                            
+                            // 清理原始图片（可选）
+                            await cacheService.deleteImage(cacheKey);
+                            
+                            return newKey;
+                        } else {
+                            console.warn(`⚠️ 图片 ${cacheKey} OCR 处理失败，使用原始图片`);
+                            return cacheKey;
+                        }
+                    } catch (error) {
+                        console.error(`❌ 图片 ${cacheKey} OCR 处理出错:`, error.message);
+                        return cacheKey; // 出错时返回原始键
+                    }
+                });
+                
+                // 等待所有OCR任务完成
+                const processedKeys = await Promise.all(ocrTasks);
+                
+                return { 
+                    success: true, 
+                    cacheKeys: processedKeys,
+                    originalCount: result.cacheKeys.length,
+                    processedCount: processedKeys.filter(k => k).length
+                };
+            }
+            return { success: false };
+        }).catch(err => {
             console.error(`Task ${i} 失败:`, err.message);
             return { success: false };
         })
     );
 
     const results = await Promise.all(tasks);
+    
+    // 统计信息
+    const totalOriginal = results.reduce((sum, r) => sum + (r.originalCount || 0), 0);
+    const totalProcessed = results.reduce((sum, r) => sum + (r.processedCount || 0), 0);
+    
+    console.log(`📊 OCR 处理统计: 原始图片 ${totalOriginal} 张，成功处理 ${totalProcessed} 张`);
+    
     const allKeys = results.flatMap(r => r.cacheKeys || []);
-    return { success: true, cacheKeys: allKeys };
+    return { 
+        success: true, 
+        cacheKeys: allKeys,
+        stats: {
+            totalOriginal,
+            totalProcessed,
+            ocrSuccessRate: totalOriginal > 0 ? (totalProcessed / totalOriginal * 100).toFixed(1) + '%' : '0%'
+        }
+    };
 }
 
   // Phase 3: 底层流式生成 (关键修复区域)

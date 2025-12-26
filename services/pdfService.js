@@ -18,6 +18,7 @@ const {
   ServiceApiError
 } = require("@adobe/pdfservices-node-sdk");
 const fs = require("fs-extra");
+const fsp = fs.promises;
 const path = require("path");
 const AdmZip = require("adm-zip");
 const { v4: uuidv4 } = require("uuid");
@@ -39,24 +40,25 @@ class PDFService {
     this.pdfServices = new PDFServices({ credentials });
   }
 
-  async image_ocr_image(imageBytes) {
+  async image_ocr_image(ext, imageData) {
+    const outputId = uuidv4();
+    const outputPdfPath = path.join('outputs', `${outputId}.pdf`);
+    
     // 创建PDF文档
     const pdfDoc = await PDFDocument.create();
-    // 根据图片格式嵌入图片
-    const ext = path.extname(imagePath).toLowerCase();
     let image;
     
     if (ext === '.png') {
-      image = await pdfDoc.embedPng(imageBytes);
+      image = await pdfDoc.embedPng(imageData);
     } else if (ext === '.jpg' || ext === '.jpeg') {
-      image = await pdfDoc.embedJpg(imageBytes);
+      image = await pdfDoc.embedJpg(imageData);
     } else if (ext === '.gif') {
       // 注意：pdf-lib不支持直接嵌入GIF，可以转换为PNG
-      const pngBuffer = await sharp(imageBytes).png().toBuffer();
+      const pngBuffer = await sharp(imageData).png().toBuffer();
       image = await pdfDoc.embedPng(pngBuffer);
     } else {
       // 其他格式尝试用sharp转换后嵌入
-      const pngBuffer = await sharp(imageBytes).png().toBuffer();
+      const pngBuffer = await sharp(imageData).png().toBuffer();
       image = await pdfDoc.embedPng(pngBuffer);
     }
     
@@ -78,17 +80,17 @@ class PDFService {
     const ocrPDFRet = await this.ocrPDF(outputPdfPath);
     const ocrPDFPath = ocrPDFRet.ocrPdfPath;
 
-    const outputId = uuidv4();
-    const outputDir = path.join('outputs', outputId);
+    const outputId2 = uuidv4();
+    const outputDir2 = path.join('outputs', outputId2);
     
     // 创建输出目录
-    await fsp.mkdir(outputDir, { recursive: true });
+    await fsp.mkdir(outputDir2, { recursive: true });
     
     // 配置pdf2pic
     const options = {
       density: 150,           // 输出分辨率
       saveFilename: "page",   // 文件名前缀
-      savePath: outputDir,    // 输出目录
+      savePath: outputDir2,    // 输出目录
       format: "png",          // 输出格式
       width: 1240,            // 宽度
       height: 1754            // 高度
@@ -111,15 +113,18 @@ class PDFService {
     // 转换所有页面
     const imageOutput = null;
     try {
-      const result = await convert(1, true);
+      const result = await convert(1);
       imageOutput = {
         filename: result.name,
-        path: `/outputs/${outputId}/${result.name}`,
+        path: `/outputs/${outputId2}/${result.name}`,
         fullPath: result.path
       };
     } catch (pageError) {
       console.error(`OCR后的PDF转换失败:`, pageError);
     }
+
+    // 清理临时文件
+    // await fs.unlink(ocrPDFPath);
 
     return imageOutput;
   }
@@ -336,16 +341,16 @@ class PDFService {
       });
 
       // 读取 OCR 后的文本
-      const extractResult = await this.extractPDF(ocrPdfPath);
+      //const extractResult = await this.extractPDF(ocrPdfPath);
       
       // 清理临时文件
-      await fs.unlink(ocrPdfPath);
+      // await fs.unlink(ocrPdfPath);
       
       return {
         success: true,
         message: 'OCR 处理完成',
         ocrPdfPath: ocrPdfPath,
-        extractedText: extractResult
+        // extractedText: extractResult
       };
       
     } catch (err) {

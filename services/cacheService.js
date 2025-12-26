@@ -329,6 +329,29 @@ class CacheService {
       };
     }
   }
+
+  async getImageBuffer(key) {
+    try {
+      // 根据你的缓存实现来获取图片Buffer
+      // 这里假设你有一个方法可以从缓存中获取图片数据
+      const filePath = this.getImagePath(key);
+      return await fs.readFile(filePath);
+    } catch (error) {
+      console.error(`获取图片 ${key} 失败:`, error);
+      return null;
+    }
+  }
+  
+  async deleteImage(key) {
+    try {
+      const filePath = this.getImagePath(key);
+      await fs.unlink(filePath);
+      return true;
+    } catch (error) {
+      console.error(`删除图片 ${key} 失败:`, error);
+      return false;
+    }
+  }
 }
 
 module.exports = new CacheService();
