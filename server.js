@@ -99,7 +99,7 @@ app.post('/api/extract', upload.single('pdf'), async (req, res) => {
         // 返回 JSON，其中 generatedPrompt 将由前端交给第二个接口
         res.json({
             text: finalSummary, 
-            generatedPrompt: finalPrompt,
+            generatedPrompt: finalPrompt + "\n\n生图时请参考一下论文摘要：\n\n" + finalSummary,
             metadata: {
                 ...result.metadata,
                 title: result.metadata?.title || req.file.originalname,

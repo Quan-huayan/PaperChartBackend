@@ -21,6 +21,7 @@ const fs = require("fs-extra");
 const path = require("path");
 const AdmZip = require("adm-zip");
 const { v4: uuidv4 } = require("uuid");
+const { PDFDocument } = require('pdf-lib');
 const cacheService = require("./cacheService");
 
 class PDFService {
@@ -36,6 +37,91 @@ class PDFService {
     });
 
     this.pdfServices = new PDFServices({ credentials });
+  }
+
+  async image_ocr_image(imageBytes) {
+    // 创建PDF文档
+    const pdfDoc = await PDFDocument.create();
+    // 根据图片格式嵌入图片
+    const ext = path.extname(imagePath).toLowerCase();
+    let image;
+    
+    if (ext === '.png') {
+      image = await pdfDoc.embedPng(imageBytes);
+    } else if (ext === '.jpg' || ext === '.jpeg') {
+      image = await pdfDoc.embedJpg(imageBytes);
+    } else if (ext === '.gif') {
+      // 注意：pdf-lib不支持直接嵌入GIF，可以转换为PNG
+      const pngBuffer = await sharp(imageBytes).png().toBuffer();
+      image = await pdfDoc.embedPng(pngBuffer);
+    } else {
+      // 其他格式尝试用sharp转换后嵌入
+      const pngBuffer = await sharp(imageBytes).png().toBuffer();
+      image = await pdfDoc.embedPng(pngBuffer);
+    }
+    
+    // 创建与图片相同尺寸的页面
+    const page = pdfDoc.addPage([image.width, image.height]);
+    
+    // 绘制图片到页面
+    page.drawImage(image, {
+      x: 0,
+      y: 0,
+      width: image.width,
+      height: image.height,
+    });
+    
+    // 保存PDF
+    const pdfBytes = await pdfDoc.save();
+    await fsp.writeFile(outputPdfPath, pdfBytes);
+
+    const ocrPDFRet = await this.ocrPDF(outputPdfPath);
+    const ocrPDFPath = ocrPDFRet.ocrPdfPath;
+
+    const outputId = uuidv4();
+    const outputDir = path.join('outputs', outputId);
+    
+    // 创建输出目录
+    await fsp.mkdir(outputDir, { recursive: true });
+    
+    // 配置pdf2pic
+    const options = {
+      density: 150,           // 输出分辨率
+      saveFilename: "page",   // 文件名前缀
+      savePath: outputDir,    // 输出目录
+      format: "png",          // 输出格式
+      width: 1240,            // 宽度
+      height: 1754            // 高度
+    };
+    
+    // Windows环境特殊处理
+    let pdf2pic;
+    try {
+      // 尝试直接引入pdf2pic
+      pdf2pic = require('pdf2pic');
+    } catch (e) {
+      // 如果失败，尝试使用pdf2pic的替代方案
+      console.warn('使用pdf2pic的替代方案');
+      const { fromPath } = require('pdf2pic');
+      pdf2pic = { fromPath };
+    }
+    
+    const convert = pdf2pic.fromPath(ocrPDFPath, options);
+    
+    // 转换所有页面
+    const imageOutput = null;
+    try {
+      const result = await convert(1, true);
+      imageOutput = {
+        filename: result.name,
+        path: `/outputs/${outputId}/${result.name}`,
+        fullPath: result.path
+      };
+    } catch (pageError) {
+      console.error(`OCR后的PDF转换失败:`, pageError);
+    }
+
+    return imageOutput;
   }
 
   async extractPDF(filePath) {
@@ -115,10 +201,11 @@ class PDFService {
     const tableReferences = [];
 
     for (const element of structuredData.elements) {
-      if (element.Path) {
-        const entry = zipEntries.find(e => e.entryName === element.Path);
+      if (element.filePaths) {
+        const filePath = element.filePaths[0];
+        const entry = zipEntries.find(e => e.entryName === filePath);
         
-        if (entry && element.Path.includes('renditions/figures/')) {
+        if (entry && filePath.includes('figures')) {
           // 处理图片
           const imageKey = uuidv4();
           const imageBuffer = entry.getData();
@@ -140,7 +227,7 @@ class PDFService {
             alt: element.Alt || ''
           });
           
-        } else if (entry && element.Path.includes('renditions/tables/')) {
+        } else if (entry && filePath.includes('tables')) {
           // 处理表格
           const tableKey = uuidv4();
           const tableBuffer = entry.getData();

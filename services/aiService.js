@@ -26,7 +26,7 @@ class AIService {
                     role: "system", 
                     content: `你是一个专业学术科研助手。请分析论文正文，输出以下4个部分，每个部分之间严格用 "###" 分隔，内容不要包含编号：
 Summary: 详细学术摘要(200-400字)。
-Prompt: 一段高质量英文生图指令(Subject + Style + Rendering)。
+Prompt: 一段高质量英文生图指令(Subject + Style + Rendering)，用来生成脉络清晰的论文结构图表。
 Authors: 作者列表，仅逗号分隔。
 Keywords: 5个核心关键词，仅逗号分隔。` 
                 },
